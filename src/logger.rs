@@ -20,7 +20,7 @@ impl Logger {
         let level = LevelFilter::Trace;
         log::set_max_level(level);
         Self {
-            buffer: RefCell::new(AllocRingBuffer::with_capacity(128)),
+            buffer: RefCell::new(AllocRingBuffer::with_capacity(2048)),
             strbuf: RefCell::new(ArrayString::<128>::new()),
             level,
         }
