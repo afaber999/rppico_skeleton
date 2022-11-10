@@ -529,6 +529,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "rppico_skeleton"
+version = "0.1.1"
+dependencies = [
+ "alloc-cortex-m",
+ "arrayvec",
+ "cortex-m",
+ "cortex-m-rt",
+ "embedded-graphics",
+ "embedded-hal",
+ "embedded-time",
+ "log",
+ "nb 1.0.0",
+ "panic-halt",
+ "ringbuffer",
+ "rp-pico",
+ "usb-device",
+ "usbd-serial",
+]
+
+[[package]]
 name = "rustc_version"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -605,24 +625,4 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ee8f19f9d74293faf70901bc20ad067dc1ad390d2cbf1e3f75f721ffee908b6"
 dependencies = [
  "vcell",
-]
-
-[[package]]
-name = "xususp"
-version = "0.1.0"
-dependencies = [
- "alloc-cortex-m",
- "arrayvec",
- "cortex-m",
- "cortex-m-rt",
- "embedded-graphics",
- "embedded-hal",
- "embedded-time",
- "log",
- "nb 1.0.0",
- "panic-halt",
- "ringbuffer",
- "rp-pico",
- "usb-device",
- "usbd-serial",
 ]
