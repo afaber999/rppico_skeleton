@@ -7,6 +7,9 @@
 
 #![feature(alloc_error_handler)]
 extern crate alloc;
+use alloc_cortex_m::CortexMHeap;
+use embedded_hal::digital::v2::{ToggleableOutputPin, OutputPin};
+use core::alloc::Layout;
 
 use alloc::boxed::Box;
 use log::LevelFilter;
@@ -21,11 +24,6 @@ use rp_pico::hal::rom_data::reset_to_usb_boot;
 pub mod logger;
 use log::{info, warn, error, trace, debug};
 
-//use cortex_m::prelude::_embedded_hal_blocking_delay_DelayUs;
-use alloc_cortex_m::CortexMHeap;
-use core::alloc::Layout;
-//use cortex_m::delay::Delay;
-
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
 use core::mem::MaybeUninit;
@@ -36,6 +34,12 @@ static mut HEAP: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZ
 fn oom(_: Layout) -> ! {
     loop {}
 }
+
+pub mod stopwatch;
+use stopwatch::Stopwatch;
+
+pub mod countdown_timer;
+use countdown_timer::CountdownTimer;
 
 #[entry]
 fn main() -> ! {
@@ -53,6 +57,7 @@ fn main() -> ! {
 
     // setup minimal peripherals
     let mut pac = pac::Peripherals::take().unwrap();
+    let cp = pac::CorePeripherals::take().unwrap();    
     let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
 
     // The default is to generate a 125 MHz system clock
@@ -77,10 +82,13 @@ fn main() -> ! {
         &mut pac.RESETS,
     ));
 
+    // get the delay object
+    let mut delay = cortex_m::delay::Delay::new(cp.SYST, 125_000_000);
+
     // setup the USB Communications Class Device driver
     let mut serial = SerialPort::new(&usb_bus);
 
-    // create a USB device with a fake VID and PID
+    // create serial (CDC) USB device
     let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
         .manufacturer("NoName")
         .product("Nothing")
@@ -89,15 +97,42 @@ fn main() -> ! {
         .build();
 
     let timer = hal::Timer::new(pac.TIMER, &mut pac.RESETS);
+
+    // The single-cycle I/O block controls our GPIO pins
+    let sio = hal::Sio::new(pac.SIO);
+        
+    // Set the pins up according to their function on this particular board
+    let pins = rp_pico::Pins::new(
+        pac.IO_BANK0,
+        pac.PADS_BANK0,
+        sio.gpio_bank0,
+        &mut pac.RESETS,
+    );
+
+    // Set the LED to be an output
+    let mut led_pin = pins.led.into_push_pull_output();
+    drop( led_pin.set_high());
+    
     let mut said_hello = false;
 
     info!("Start the main loop");    
+    let mut blink_timer = CountdownTimer::new();
 
     loop {
-        // display a welcome message at startup
-        if !said_hello && timer.get_counter() >= 2_000_000 {
-            said_hello = true;
-            let _ = serial.write(b"RP skeleton version 0.1 !\r\n");
+
+        if blink_timer.is_expired(&timer) {
+            blink_timer.start(&timer, 1500_000);
+            drop( led_pin.toggle());
+        }
+
+        if usb_dev.state() == UsbDeviceState::Configured {
+            // display a welcome message at startup
+            if !said_hello {
+                said_hello = true;
+                drop( serial.write(b"RP2040 pico skeleton version 0.1 !\r\n"));
+    
+            }
+            logger.write_to_serial(&mut serial);
         }
 
         // check for incoming serial over USB data
@@ -107,14 +142,29 @@ fn main() -> ! {
                 Err(_e) => {}
                 Ok(0) => {}
                 Ok(count) => {
+                    info!("GOT SOMETHING");
                     for b_idx in 0..count { 
                         let ub = buf[b_idx];
-                        //drop( serial.write(&ub) );
 
                         match  ub as char  {
                             'a' | 'A' => {
                                 drop( serial.write(b"Check: I'm alive !\r\n") );
-                            },   
+                            },
+                            'd' | 'D' => {
+                                drop( serial.write(b"Check: delay !\r\n") );
+
+                                let mut stopwatch = Stopwatch::new();
+                                stopwatch.start( &timer );
+                                delay.delay_us(100);
+                                let delta = stopwatch.delta(&timer);
+                                info!("Time check for 100us :{} us", delta);
+                                
+                                stopwatch.start( &timer );
+                                delay.delay_ms(100);
+                                let delta = stopwatch.delta(&timer);
+                                info!("Time check for 100ms :{} us", delta);
+
+                            },                             
                             'f' | 'F' => {
                                 drop( serial.write(b"Boot to Flash mode!\r\n") );
                                 reset_to_usb_boot(0,0);    
@@ -127,20 +177,13 @@ fn main() -> ! {
                                 trace!("this is a trace, timer {}",timer.get_counter());
                                 warn!("purge logs!!");
                             },
-                            _=>{},
+                            _=>{ 
+                                error!("unknown command: {}", ub);
+                            },
                         }
                     }
                 }
             }
         }
-        if usb_dev.state() == UsbDeviceState::Configured {
-            // if !said_hello && timer.get_counter() >= 2_000_000 {
-            //     said_hello = true;
-            //     let _ = serial.write(b"RP skeleton version 0.1 !\r\n");
-            // }
-                // purge the logging
-            logger.write_to_serial(&mut serial);
-        }
-
     }
 }
